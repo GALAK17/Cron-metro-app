@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cronômetro</title>
+    <meta name="description" content="Um aplicativo de cronômetro simples e eficiente">
+    <meta name="theme-color" content="#4CAF50">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192x192.png">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        .container {
+            text-align: center;
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            max-width: 90%;
+            width: 350px;
+        }
+        .display {
+            font-size: 48px;
+            margin: 20px 0;
+            font-family: monospace;
+        }
+        .buttons {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+            min-width: 100px;
+        }
+        .start {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .pause {
+            background-color: #FFC107;
+        }
+        .reset {
+            background-color: #F44336;
+            color: white;
+        }
+        .lap {
+            background-color: #2196F3;
+            color: white;
+        }
+        .lap-times {
+            margin-top: 20px;
+            max-height: 150px;
+            overflow-y: auto;
+            text-align: left;
+        }
+        .lap-item {
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .install-prompt {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #e9f7fe;
+            border-radius: 5px;
+            display: none;
+        }
+        #installBtn {
+            background-color: #4CAF50;
+            color: white;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Cronômetro</h1>
+        <div class="display" id="display">00:00:00.000</div>
+        <div class="buttons">
+            <button class="start" id="startBtn">Iniciar</button>
+            <button class="pause" id="pauseBtn" disabled>Pausar</button>
+            <button class="reset" id="resetBtn">Resetar</button>
+            <button class="lap" id="lapBtn" disabled>Volta</button>
+        </div>
+        <div class="lap-times" id="lapTimes"></div>
+        <div class="install-prompt" id="installPrompt">
+            <p>Você pode instalar este aplicativo no seu dispositivo!</p>
+            <button id="installBtn">Instalar</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const display = document.getElementById('display');
+            const startBtn = document.getElementById('startBtn');
+            const pauseBtn = document.getElementById('pauseBtn');
+            const resetBtn = document.getElementById('resetBtn');
+            const lapBtn = document.getElementById('lapBtn');
+            const lapTimes = document.getElementById('lapTimes');
+            const installPrompt = document.getElementById('installPrompt');
+            const installBtn = document.getElementById('installBtn');
+            
+            let startTime;
+            let elapsedTime = 0;
+            let timerInterval;
+            let running = false;
+            let lapCounter = 1;
+            let deferredPrompt;
+            
+            // Registrar o service worker para PWA
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('sw.js')
+                        .then(registration => {
+                            console.log('Service Worker registrado com sucesso:', registration.scope);
+                        })
+                        .catch(error => {
+                            console.log('Falha ao registrar o Service Worker:', error);
+                        });
+                });
+            }
+            
+            // Capturar o evento beforeinstallprompt para o botão de instalação personalizado
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                deferredPrompt = e;
+                installPrompt.style.display = 'block';
+            });
+            
+            // Manipular o clique no botão de instalação
+            installBtn.addEventListener('click', async () => {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    console.log(`Resultado da escolha do usuário: ${outcome}`);
+                    deferredPrompt = null;
+                    installPrompt.style.display = 'none';
+                }
+            });
+            
+            // Funções do cronômetro
+            function formatTime(milliseconds) {
+                const ms = milliseconds % 1000;
+                const seconds = Math.floor((milliseconds / 1000) % 60);
+                const minutes = Math.floor((milliseconds / (1000 * 60)) % 60);
+                const hours = Math.floor((milliseconds / (1000 * 60 * 60)));
+                
+                return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+            }
+            
+            function updateDisplay() {
+                const currentTime = running ? Date.now() - startTime + elapsedTime : elapsedTime;
+                display.textContent = formatTime(currentTime);
+            }
+            
+            function startTimer() {
+                if (!running) {
+                    startTime = Date.now();
+                    running = true;
+                    timerInterval = setInterval(updateDisplay, 10);
+                    startBtn.disabled = true;
+                    pauseBtn.disabled = false;
+                    lapBtn.disabled = false;
+                }
+            }
+            
+            function pauseTimer() {
+                if (running) {
+                    clearInterval(timerInterval);
+                    elapsedTime += Date.now() - startTime;
+                    running = false;
+                    startBtn.disabled = false;
+                    pauseBtn.disabled = true;
+                    startBtn.textContent = 'Continuar';
+                }
+            }
+            
+            function resetTimer() {
+                clearInterval(timerInterval);
+                running = false;
+                elapsedTime = 0;
+                display.textContent = '00:00:00.000';
+                startBtn.disabled = false;
+                pauseBtn.disabled = true;
+                lapBtn.disabled = true;
+                startBtn.textContent = 'Iniciar';
+                lapTimes.innerHTML = '';
+                lapCounter = 1;
+            }
+            
+            function recordLap() {
+                if (running) {
+                    const currentTime = Date.now() - startTime + elapsedTime;
+                    const lapItem = document.createElement('div');
+                    lapItem.classList.add('lap-item');
+                    lapItem.textContent = `Volta ${lapCounter}: ${formatTime(currentTime)}`;
+                    lapTimes.insertBefore(lapItem, lapTimes.firstChild);
+                    lapCounter++;
+                }
+            }
+            
+            startBtn.addEventListener('click', startTimer);
+            pauseBtn.addEventListener('click', pauseTimer);
+            resetBtn.addEventListener('click', resetTimer);
+            lapBtn.addEventListener('click', recordLap);
+            
+            // Verificar se está offline e notificar
+            window.addEventListener('online', () => {
+                console.log('Aplicativo online');
+            });
+            
+            window.addEventListener('offline', () => {
+                console.log('Aplicativo offline, mas ainda funcionando');
+            });
+        });
+    </script>
+</body>
+</html>
